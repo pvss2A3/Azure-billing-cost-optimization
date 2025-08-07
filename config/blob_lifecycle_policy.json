@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "name": "archiveOldRecords",
+      "enabled": true,
+      "type": "Lifecycle",
+      "definition": {
+        "filters": {
+          "prefix": "billing/",
+          "blobTypes": ["blockBlob"]
+        },
+        "actions": {
+          "baseBlob": {
+            "tierToCool": { "daysAfterModificationGreaterThan": 90 },
+            "tierToArchive": { "daysAfterModificationGreaterThan": 365 },
+            "delete": { "daysAfterModificationGreaterThan": 2555 }
+          }
+        }
+      }
+    }
+  ]
+}
