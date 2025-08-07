@@ -24,17 +24,28 @@ The proposed solution uses a **tiered storage architecture** to store recent rec
 
 ### Architecture Diagram
 
-See `docs/architecture_diagram.md` for a Mermaid diagram of the solution.
+```mermaid
+graph TD
+    A[Client] -->|Read/Write API| B[Azure API Management]
+    B --> C[Azure Functions: API Handler]
+    C -->|Hot Data up to 3 months| D[Azure Cosmos DB]
+    C -->|Cold Data over 3 months| E[Azure Blob Storage]
+    D -->|Metadata for Archived Records| C
+    D -->|Age-based Trigger| F[Azure Event Grid]
+    F -->|Archival Job| G[Azure Functions: Archival]
+    G -->|Move to Blob| E
+    G -->|Update Metadata| D
+    C -->|Optional Cache| H[Azure Redis Cache]
 
 ### How It Works
 
 1. **Data Archival**:
-   - A Cosmos DB change feed triggers an Azure Function (`src/archival_function.py`) when records are older than 3 months (based on `created_at` timestamp).
+   - A Cosmos DB change feed triggers an Azure Function ([archival_function.py](src/archival_function.py)) when records are older than 3 months (based on `created_at` timestamp).
    - The function uploads the record to Blob Storage, calculates a SHA256 checksum for integrity, creates a metadata document in Cosmos DB (with the record’s ID, Blob URI, and checksum), and deletes the original record.
-   - Blob Storage uses a lifecycle policy (`config/blob_lifecycle_policy.json`) to transition records to the Cool tier after 90 days and Archive tier after 365 days, with deletion after 7 years for compliance.
+   - Blob Storage uses a lifecycle policy ([blob_lifecycle_policy.json](config/blob_lifecycle_policy.json)) to transition records to the Cool tier after 90 days and Archive tier after 365 days, with deletion after 7 years for compliance.
 
 2. **Data Retrieval**:
-   - The API handler (`src/api_handler.py`) processes read requests. It checks Cosmos DB first for hot data. If not found, it queries the metadata index to retrieve the record from Blob Storage.
+   - The API handler ([api_handler.py](src/api_handler.py)) processes read requests. It checks Cosmos DB first for hot data. If not found, it queries the metadata index to retrieve the record from Blob Storage.
    - Retrieval from Blob Storage (Cool tier) takes 1–5 seconds, meeting the latency requirement. The checksum ensures data integrity.
 
 3. **Cost Optimization**:
@@ -62,6 +73,35 @@ See `docs/architecture_diagram.md` for a Mermaid diagram of the solution.
 - **Cost Overruns**: RU spikes are managed with autoscale and monitoring. Blob retrieval costs are minimized by lifecycle policies.
 - **Scalability Limits**: Large archival jobs are batched, with Durable Functions as a fallback for long-running tasks.
 
+## Cost Savings Estimate
+- **Cosmos DB**: Archiving 75% of 2M records (1.5M records, ~450 GB) reduces storage costs by ~70% (from ~$24/GB/month to Blob Storage’s ~$0.02/GB/month in Cool tier).
+- **RU Savings**: Reducing data volume lowers RU consumption, potentially saving 50–70% on throughput costs.
+- Exact savings depend on read/write patterns and RU provisioning.
+
+## FAQ
+
+**Q: Why use Azure Blob Storage for archiving instead of another database?**
+**A**: Blob Storage is significantly cheaper than Cosmos DB for storing rarely accessed data. The Cool tier offers low-cost storage with retrieval times of 1–5 seconds, and the Archive tier further reduces costs for long-term retention.
+
+**Q: How is data integrity ensured during archival?**
+**A**: A SHA256 checksum is calculated before uploading to Blob Storage and stored in the metadata document. During retrieval, the checksum is verified to detect corruption.
+
+**Q: What happens if a record is not found in Cosmos DB or Blob Storage?**
+**A**: The API handler returns a 404 error if the record ID is not found in Cosmos DB or the metadata index, ensuring clear error communication to clients.
+
+**Q: Why use the Cool tier instead of Archive tier for recent archives?**
+**A**: The Cool tier provides faster retrieval (1–5 seconds) compared to the Archive tier (hours), meeting the requirement for serving old records in seconds. The Archive tier is used for records > 12 months old.
+
+**Q: How does the solution ensure no downtime?**
+**A**: The archival process runs in the background via the Cosmos DB change feed, and the API handler abstracts the storage tier, ensuring seamless access to both hot and cold data without service interruption.
+
+**Q: Can the solution handle large-scale archival?**
+**A**: Yes, Azure Functions scale out automatically, and batch processing handles large datasets. For very large archival jobs, Durable Functions can be used for orchestration.
+
+**Q: What are the estimated cost savings?**
+**A**: Archiving 75% of 2M records (~450 GB) reduces Cosmos DB storage costs by ~70% (from ~$24/GB/month to ~$0.02/GB/month in Blob Storage’s Cool tier). RU savings depend on read/write patterns but could be 50–70% with reduced data volume.
+
+
 ## Setup Instructions
 
 1. **Clone the repository**:
@@ -70,19 +110,20 @@ See `docs/architecture_diagram.md` for a Mermaid diagram of the solution.
    cd azure-billing-cost-optimization
 
 2. **Deploy Azure resources:**:
-   - Update deploy/deploy_resources.sh with your Cosmos DB key and Blob Storage connection string.
+   - Update [deploy_resources.sh](deploy/deploy_resources.sh) with your Cosmos DB key and Blob Storage connection string.
    - Run:
       ```bash
       chmod +x deploy/deploy_resources.sh
       ./deploy/deploy_resources.sh
 
 3. **Deploy Azure Functions**:
-   - Deploy `src/archival_function.py` and `src/api_handler.py` to your Function App:
+   - Deploy [archival_function.py](src/archival_function.py) and [api_handler.py](src/api_handler.py) to your Function App:
+
       ```bash
       func azure functionapp publish billing-functions
    
 4. **Configure Blob Storage Lifecycle**:
-   - Apply `config/blob_lifecycle_policy.json` using the Azure CLI command in `deploy_resources.sh`.
+   - Apply [blob_lifecycle_policy.json](config/blob_lifecycle_policy.json) using the Azure CLI command in `deploy_resources.sh`.
 
 ## Repository Structure
 
@@ -90,16 +131,27 @@ See `docs/architecture_diagram.md` for a Mermaid diagram of the solution.
    - `/config`: Blob Storage lifecycle policy (`blob_lifecycle_policy.json`).
    - `/deploy`: Deployment script (`deploy_resources.sh`).
    - `/docs`: Architecture diagram (`architecture_diagram.md`) and AI conversation log (`ai_conversation_log.md`).
-   - `/tests`: Placeholder for unit tests (e.g., checksum validation, API mocks).
+   - `/tests`: Unit test for checksum validation (test_checksum.py) and placeholder for additional tests (`README.md`).
+   - `/CONTRIBUTING.md`: Guidelines for contributing to the project.
+   - `/LICENSE`: MIT License.
 
 ## Running Tests
 
-Placeholder tests are in the `/tests` directory. Add unit tests for:
-   - Checksum validation during archival/retrieval.
+Unit tests are in the tests/ directory. To run:
+   ```bash
+   pip install pytest
+   pytest tests/
+
+Add unit tests for:
    - Mocked Cosmos DB queries and Blob Storage retrievals.
+   - API handler edge cases (e.g., missing metadata, corrupted data).
    
 ## Monitoring & Maintenance
 
    - Use Azure Monitor for RU consumption, API latency, and Blob Storage costs.
    - Set up Application Insights for archival failure alerts.
    - Periodically audit archived records for compliance (e.g., 7-year retention).
+
+## AI Conversation Log
+
+See [ai_conversation_log.md](docs/ai_conversation_log.md) for the interaction log with Grok 3, detailing the solution design process.
