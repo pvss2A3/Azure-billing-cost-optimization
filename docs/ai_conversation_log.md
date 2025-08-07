@@ -34,3 +34,7 @@ The diagram will show clients hitting API Management, routing to Functions, and 
 **User**: I think README.md has only setup and stuff, but we need a description of the solution.
 
 **Grok 3**: You’re right. I’ll update the README to include a detailed problem statement and solution overview, explaining the tiered storage approach, how it optimizes costs, and how it addresses constraints (simplicity, no data loss, no downtime, unchanged APIs). I’ll keep the setup instructions and add production considerations.
+
+**User**: Improve the documentation with a FAQ, embed the architecture diagram in README.md, and add professional touches like unit tests.
+
+**Grok 3**: I’ll embed the Mermaid diagram in README.md for immediate visibility, add a FAQ section to address common questions, and include a unit test (`test_checksum.py`) for checksum validation. I’ll also add a CONTRIBUTING.md file and link to the AI conversation log to maintain a clean, professional README.
