@@ -37,6 +37,8 @@ graph TD
     G -->|Update Metadata| D
     C -->|Optional Cache| H[Azure Redis Cache]
 
+```
+
 ### How It Works
 
 1. **Data Archival**:
@@ -80,25 +82,25 @@ graph TD
 
 ## FAQ
 
-**Q: Why use Azure Blob Storage for archiving instead of another database?**
+**Q: Why use Azure Blob Storage for archiving instead of another database?** <br/>
 **A**: Blob Storage is significantly cheaper than Cosmos DB for storing rarely accessed data. The Cool tier offers low-cost storage with retrieval times of 1–5 seconds, and the Archive tier further reduces costs for long-term retention.
 
-**Q: How is data integrity ensured during archival?**
+**Q: How is data integrity ensured during archival?** <br/>
 **A**: A SHA256 checksum is calculated before uploading to Blob Storage and stored in the metadata document. During retrieval, the checksum is verified to detect corruption.
 
-**Q: What happens if a record is not found in Cosmos DB or Blob Storage?**
+**Q: What happens if a record is not found in Cosmos DB or Blob Storage?** <br/>
 **A**: The API handler returns a 404 error if the record ID is not found in Cosmos DB or the metadata index, ensuring clear error communication to clients.
 
-**Q: Why use the Cool tier instead of Archive tier for recent archives?**
+**Q: Why use the Cool tier instead of Archive tier for recent archives?** <br/>
 **A**: The Cool tier provides faster retrieval (1–5 seconds) compared to the Archive tier (hours), meeting the requirement for serving old records in seconds. The Archive tier is used for records > 12 months old.
 
-**Q: How does the solution ensure no downtime?**
+**Q: How does the solution ensure no downtime?** <br/>
 **A**: The archival process runs in the background via the Cosmos DB change feed, and the API handler abstracts the storage tier, ensuring seamless access to both hot and cold data without service interruption.
 
-**Q: Can the solution handle large-scale archival?**
+**Q: Can the solution handle large-scale archival?** <br/>
 **A**: Yes, Azure Functions scale out automatically, and batch processing handles large datasets. For very large archival jobs, Durable Functions can be used for orchestration.
 
-**Q: What are the estimated cost savings?**
+**Q: What are the estimated cost savings?** <br/>
 **A**: Archiving 75% of 2M records (~450 GB) reduces Cosmos DB storage costs by ~70% (from ~$24/GB/month to ~$0.02/GB/month in Blob Storage’s Cool tier). RU savings depend on read/write patterns but could be 50–70% with reduced data volume.
 
 
@@ -140,7 +142,8 @@ graph TD
 Unit tests are in the tests/ directory. To run:
    ```bash
    pip install pytest
-   pytest tests/
+   pytest tests/test_checksum.py
+   ```
 
 Add unit tests for:
    - Mocked Cosmos DB queries and Blob Storage retrievals.
